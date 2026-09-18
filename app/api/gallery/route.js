@@ -1,6 +1,4 @@
-
 import { NextResponse } from "next/server";
-
 import { connectDB } from "@/app/lib/mongodb";
 import Gallery from "@/app/models/Gallery";
 
@@ -9,6 +7,7 @@ export async function GET() {
     await connectDB();
 
     const images = await Gallery.find()
+      .populate("tags", "name slug hashtag")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -17,27 +16,17 @@ export async function GET() {
         success: true,
         images,
       },
-      {
-        status: 200,
-      }
+      { status: 200 }
     );
-
   } catch (error) {
-
-    console.error(
-      "GET GALLERY ERROR:",
-      error
-    );
+    console.error("GET GALLERY ERROR:", error);
 
     return NextResponse.json(
       {
         success: false,
         message: error.message,
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 }
-

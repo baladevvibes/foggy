@@ -17,9 +17,26 @@ export default function GalleryPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
+  const [tags, setTags] = useState([]);
+  const [selectedTags, setSelectedTags] = useState([]);
   // ============================
   // GET IMAGES
   // ============================
+
+
+  const getTags = async () => {
+    try {
+      const response = await fetch("/api/tags");
+
+      const data = await response.json();
+
+      if (data.success) {
+        setTags(data.tags);
+      }
+    } catch (error) {
+      console.error("Failed to load tags:", error);
+    }
+  };
 
   const getImages = async () => {
     try {
@@ -43,6 +60,7 @@ export default function GalleryPage() {
 
   useEffect(() => {
     getImages();
+    getTags()
   }, []);
 
   // ============================
@@ -103,6 +121,11 @@ export default function GalleryPage() {
         file
       );
 
+      formData.append(
+        "tags",
+        JSON.stringify(selectedTags)
+      );
+
       const response = await fetch(
         "/api/gallery/upload",
         {
@@ -110,14 +133,13 @@ export default function GalleryPage() {
           body: formData,
         }
       );
-
       const data =
         await response.json();
 
       if (!response.ok) {
         setError(
           data.message ||
-            "Upload failed"
+          "Upload failed"
         );
         return;
       }
@@ -129,6 +151,7 @@ export default function GalleryPage() {
       resetForm();
 
       getImages();
+      getTags()
     } catch (error) {
       console.error(error);
 
@@ -146,19 +169,48 @@ export default function GalleryPage() {
 
   const handleEdit = (image) => {
     setEditId(image._id);
-
     setTitle(image.title);
-
     setFile(null);
-
     setPreview(image.filepath);
 
+    // IMPORTANT:
+    // Convert populated tag objects into string IDs
+    const existingTagIds =
+      Array.isArray(image.tags)
+        ? image.tags
+          .map((tag) => {
+            if (typeof tag === "string") {
+              return tag;
+            }
+
+            return tag?._id?.toString();
+          })
+          .filter(Boolean)
+        : [];
+
+    setSelectedTags(existingTagIds);
+
+    setTagDropdownOpen(false);
     setMessage("");
     setError("");
 
     window.scrollTo({
       top: 0,
       behavior: "smooth",
+    });
+  };
+
+  const toggleTag = (tagId) => {
+    const id = tagId.toString();
+
+    setSelectedTags((prev) => {
+      const normalized = prev.map((item) => item.toString());
+
+      if (normalized.includes(id)) {
+        return normalized.filter((item) => item !== id);
+      }
+
+      return [...normalized, id];
     });
   };
 
@@ -189,13 +241,17 @@ export default function GalleryPage() {
         title
       );
 
-      // File is optional during update
       if (file) {
         formData.append(
           "file",
           file
         );
       }
+
+      formData.append(
+        "tags",
+        JSON.stringify(selectedTags)
+      );
 
       const response = await fetch(
         `/api/gallery/${editId}`,
@@ -211,7 +267,7 @@ export default function GalleryPage() {
       if (!response.ok) {
         setError(
           data.message ||
-            "Update failed"
+          "Update failed"
         );
         return;
       }
@@ -223,6 +279,7 @@ export default function GalleryPage() {
       resetForm();
 
       getImages();
+      getTags()
     } catch (error) {
       console.error(error);
 
@@ -264,7 +321,7 @@ export default function GalleryPage() {
       if (!response.ok) {
         setError(
           data.message ||
-            "Delete failed"
+          "Delete failed"
         );
         return;
       }
@@ -274,6 +331,7 @@ export default function GalleryPage() {
       );
 
       getImages();
+      getTags()
     } catch (error) {
       console.error(error);
 
@@ -294,11 +352,10 @@ export default function GalleryPage() {
     setFile(null);
     setPreview(null);
     setEditId(null);
+    setSelectedTags([]);
 
     const input =
-      document.getElementById(
-        "galleryFile"
-      );
+      document.getElementById("galleryFile");
 
     if (input) {
       input.value = "";
@@ -370,6 +427,106 @@ export default function GalleryPage() {
               "
             />
 
+          </div>
+
+          {/* TAGS */}
+
+          <div>
+            <label className="block font-medium mb-2">
+              Select Tags
+            </label>
+
+            <div className="border rounded-lg p-3 max-h-48 overflow-y-auto">
+
+              {tags.length === 0 ? (
+                <p className="text-gray-500 text-sm">
+                  No tags available
+                </p>
+              ) : (
+                tags.map((tag) => {
+                  const checked = selectedTags.includes(tag._id);
+
+                  return (
+                    <label
+                      key={tag._id}
+                      className="
+              flex
+              items-center
+              gap-3
+              px-3
+              py-2
+              rounded-lg
+              hover:bg-gray-50
+              cursor-pointer
+            "
+                    >
+                      <input
+                        type="checkbox"
+                        // checked={checked}
+                        checked={selectedTags.some(
+                          (id) => id.toString() === tag._id.toString()
+                        )}
+                        onChange={() => toggleTag(tag._id)}
+                        className="w-4 h-4"
+                      />
+
+                      <span className="text-[#5F6C37] font-medium">
+                        {tag.hashtag}
+                      </span>
+                    </label>
+                  );
+                })
+              )}
+
+            </div>
+
+            {/* SELECTED TAGS */}
+
+            {selectedTags.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-3">
+                {selectedTags.map((tagId) => {
+                  const tag = tags.find(
+                    (item) => item._id === tagId
+                  );
+
+                  if (!tag) return null;
+
+                  return (
+                    <span
+                      key={tag._id}
+                      className="
+              inline-flex
+              items-center
+              gap-2
+              bg-[#D9A25C]/20
+              text-[#5F6C37]
+              px-3
+              py-1
+              rounded-full
+              text-sm
+              font-medium
+            "
+                    >
+                      {tag.hashtag}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedTags((prev) =>
+                            prev.filter(
+                              (id) => id !== tag._id
+                            )
+                          );
+                        }}
+                        className="text-red-500 font-bold"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* FILE */}
@@ -465,8 +622,8 @@ export default function GalleryPage() {
               {loading
                 ? "Processing..."
                 : editId
-                ? "Update Image"
-                : "Upload Image"}
+                  ? "Update Image"
+                  : "Upload Image"}
 
             </button>
 

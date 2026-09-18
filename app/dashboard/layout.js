@@ -19,6 +19,11 @@ export default function DashboardLayout({
       path: "/dashboard",
       icon: "🏠",
     },
+      {
+      name: "Tags",
+      path: "/dashboard/tags",
+      icon: "🖼️",
+    },
     {
       name: "Gallery",
       path: "/dashboard/gallery",

@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { writeFile, unlink, mkdir } from "fs/promises";
+import {
+  writeFile,
+  unlink,
+  mkdir,
+} from "fs/promises";
+
 import path from "path";
 import { randomUUID } from "crypto";
 
@@ -8,35 +13,47 @@ import Gallery from "@/app/models/Gallery";
 
 export const runtime = "nodejs";
 
-// ============================
-// UPDATE
-// ============================
 
-export async function PUT(request, { params }) {
+// ==========================================
+// UPDATE GALLERY
+// ==========================================
+
+export async function PUT(req, { params }) {
   try {
     await connectDB();
 
     const { id } = await params;
 
-    const existingImage =
+    const gallery =
       await Gallery.findById(id);
 
-    if (!existingImage) {
+    if (!gallery) {
       return NextResponse.json(
         {
           success: false,
-          message: "Image not found",
+          message: "Gallery image not found",
         },
         { status: 404 }
       );
     }
 
-    const formData = await request.formData();
+    const formData =
+      await req.formData();
 
-    const title = formData.get("title");
-    const file = formData.get("file");
+    const title =
+      formData.get("title");
 
-    if (!title || typeof title !== "string") {
+    const file =
+      formData.get("file");
+
+    const tagsString =
+      formData.get("tags");
+
+    // -------------------------
+    // TITLE
+    // -------------------------
+
+    if (!title || !title.trim()) {
       return NextResponse.json(
         {
           success: false,
@@ -46,11 +63,39 @@ export async function PUT(request, { params }) {
       );
     }
 
-    // Update title
-    existingImage.title = title.trim();
+    // -------------------------
+    // TAGS
+    // -------------------------
 
-    // If new image selected
-    if (file && typeof file !== "string") {
+    let tags = [];
+
+    if (tagsString) {
+      try {
+        tags = JSON.parse(tagsString);
+      } catch {
+        tags = [];
+      }
+    }
+
+    if (!Array.isArray(tags)) {
+      tags = [];
+    }
+
+    // -------------------------
+    // UPDATE TITLE + TAGS
+    // -------------------------
+
+    gallery.title =
+      title.trim();
+
+    gallery.tags = tags;
+
+    // -------------------------
+    // OPTIONAL FILE
+    // -------------------------
+
+    if (file && file.size > 0) {
+
       const allowedTypes = [
         "image/jpeg",
         "image/jpg",
@@ -59,102 +104,139 @@ export async function PUT(request, { params }) {
         "image/gif",
       ];
 
-      if (!allowedTypes.includes(file.type)) {
+      if (
+        !allowedTypes.includes(
+          file.type
+        )
+      ) {
         return NextResponse.json(
           {
             success: false,
             message:
-              "Only JPG, PNG, WEBP and GIF are allowed",
+              "Invalid image type",
           },
           { status: 400 }
         );
       }
 
-      const maxSize = 5 * 1024 * 1024;
+      const maxSize =
+        5 * 1024 * 1024;
 
       if (file.size > maxSize) {
         return NextResponse.json(
           {
             success: false,
             message:
-              "Maximum image size is 5 MB",
+              "Image must be less than 5 MB",
           },
           { status: 400 }
         );
       }
 
-      const uploadDirectory = path.join(
-        process.cwd(),
-        "public",
-        "uploads",
-        "gallery"
-      );
+      // -------------------------
+      // DELETE OLD FILE
+      // -------------------------
 
-      await mkdir(uploadDirectory, {
-        recursive: true,
-      });
+      if (gallery.filepath) {
+
+        const oldFilePath =
+          path.join(
+            process.cwd(),
+            "public",
+            gallery.filepath
+          );
+
+        try {
+          await unlink(
+            oldFilePath
+          );
+        } catch (error) {
+          console.log(
+            "Old image not found:",
+            error.message
+          );
+        }
+      }
+
+      // -------------------------
+      // NEW FILE
+      // -------------------------
+
+      const bytes =
+        await file.arrayBuffer();
+
+      const buffer =
+        Buffer.from(bytes);
 
       const extension =
-        path.extname(file.name).toLowerCase();
+        path.extname(
+          file.name
+        ) || ".jpg";
 
-      const newFilename =
+      const filename =
         `${randomUUID()}${extension}`;
 
-      const newFilePath = path.join(
-        uploadDirectory,
-        newFilename
+      const uploadDir =
+        path.join(
+          process.cwd(),
+          "public",
+          "uploads",
+          "gallery"
+        );
+
+      await mkdir(
+        uploadDir,
+        {
+          recursive: true,
+        }
       );
 
-      const bytes = await file.arrayBuffer();
-
-      const buffer = Buffer.from(bytes);
+      const newFilePath =
+        path.join(
+          uploadDir,
+          filename
+        );
 
       await writeFile(
         newFilePath,
         buffer
       );
 
-      // Delete old physical image
-      if (existingImage.filename) {
-        const oldFilePath = path.join(
-          uploadDirectory,
-          existingImage.filename
-        );
+      gallery.filename =
+        filename;
 
-        try {
-          await unlink(oldFilePath);
-        } catch (error) {
-          console.log(
-            "Old image not found"
-          );
-        }
-      }
+      gallery.filepath =
+        `/uploads/gallery/${filename}`;
 
-      existingImage.filename =
-        newFilename;
-
-      existingImage.filepath =
-        `/uploads/gallery/${newFilename}`;
-
-      existingImage.mimetype =
+      gallery.mimetype =
         file.type;
 
-      existingImage.size =
+      gallery.size =
         file.size;
     }
 
-    await existingImage.save();
+    // -------------------------
+    // SAVE
+    // -------------------------
+
+    await gallery.save();
 
     return NextResponse.json(
       {
         success: true,
-        message: "Image updated successfully",
-        image: existingImage,
+        message:
+          "Image updated successfully",
+        gallery,
       },
       { status: 200 }
     );
+
   } catch (error) {
-    console.error("UPDATE ERROR:", error);
+
+    console.error(
+      "UPDATE GALLERY ERROR:",
+      error
+    );
 
     return NextResponse.json(
       {
@@ -166,63 +248,81 @@ export async function PUT(request, { params }) {
   }
 }
 
-// ============================
-// DELETE
-// ============================
+
+// ==========================================
+// DELETE GALLERY
+// ==========================================
 
 export async function DELETE(
-  request,
+  req,
   { params }
 ) {
   try {
     await connectDB();
 
-    const { id } = await params;
+    const { id } =
+      await params;
 
-    const image =
+    const gallery =
       await Gallery.findById(id);
 
-    if (!image) {
+    if (!gallery) {
       return NextResponse.json(
         {
           success: false,
-          message: "Image not found",
+          message:
+            "Gallery image not found",
         },
         { status: 404 }
       );
     }
 
-    // Delete physical file
-    if (image.filename) {
-      const filePath = path.join(
-        process.cwd(),
-        "public",
-        "uploads",
-        "gallery",
-        image.filename
-      );
+    // -------------------------
+    // DELETE FILE
+    // -------------------------
+
+    if (gallery.filepath) {
+
+      const filePath =
+        path.join(
+          process.cwd(),
+          "public",
+          gallery.filepath
+        );
 
       try {
         await unlink(filePath);
       } catch (error) {
         console.log(
-          "Physical image already deleted"
+          "File already missing:",
+          error.message
         );
       }
     }
 
-    // Delete MongoDB record
-    await Gallery.findByIdAndDelete(id);
+    // -------------------------
+    // DELETE DATABASE
+    // -------------------------
+
+    await Gallery.findByIdAndDelete(
+      id
+    );
 
     return NextResponse.json(
       {
         success: true,
-        message: "Image deleted successfully",
+        message:
+          "Image deleted successfully",
       },
       { status: 200 }
     );
+
   } catch (error) {
-    console.error("DELETE ERROR:", error);
+
+    console.error(
+      "DELETE GALLERY ERROR:",
+      error
+    );
 
     return NextResponse.json(
       {
